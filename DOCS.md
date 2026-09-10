@@ -168,7 +168,7 @@ Notes:
 ```
 
 Installs `~/.config/systemd/user/whisper-type.service` and enables it. The service
-runs as `matt` after login, so it inherits the live `input` group — no
+runs as `didge316` after login, so it inherits the live `input` group — no
 stale-snapshot problem.
 
 ```bash
@@ -192,10 +192,10 @@ WHISPER_DRY=1 ./scripts/run.sh           # print text instead of typing (headles
 ## 7. The one prerequisite: fresh login for the `input` group
 
 `/dev/uinput` is `root:input 0660`, and the keyboard devices under `/dev/input/` are
-`root:input` too. `matt` must be in the `input` group to open them.
+`root:input` too. `didge316` must be in the `input` group to open them.
 
 ```bash
-sudo usermod -aG input matt              # done
+sudo usermod -aG input didge316              # done
 sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null <<'EOF'
 KERNEL=="uinput", GROUP="input", MODE="0660"
 EOF
@@ -204,7 +204,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=mi
 
 > **Effective groups are a snapshot from login.** After `usermod`, the change does
 > **not** apply until you **log out and back in** (or `sudo`, which re-reads the DB).
-> Verify with `id` (your effective groups), **not** `id matt` (which re-reads
+> Verify with `id` (your effective groups), **not** `id didge316` (which re-reads
 > `/etc/group` and will always show it).
 
 > **The udev rule must match `KERNEL=="uinput"`, not `SUBSYSTEM=="uinput"`.**
