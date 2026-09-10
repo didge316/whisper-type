@@ -152,6 +152,8 @@ class WhisperType:
                 log(f"typing: {text!r}")
                 type_text(text + " ")          # trailing space words don't stick
                 self.typing = False
+        except Exception as exc:               # never let a typing/transcribe
+            log(f"transcribe/type failed: {exc}")  # failure kill the daemon
         finally:
             for p in (RAW, RAW + ".json"):
                 try:
@@ -180,13 +182,16 @@ class WhisperType:
             if self.typing:
                 continue                      # ignore F9 while typing
 
-            if self.state == STATE_IDLE:
-                self._start_recording()
-            elif self.state == STATE_RECORDING:
-                self._stop_recording()
-                self.state = STATE_TRANSCRIBING
-                self._transcribe_and_type()
-                self.state = STATE_IDLE
+            try:
+                if self.state == STATE_IDLE:
+                    self._start_recording()
+                elif self.state == STATE_RECORDING:
+                    self._stop_recording()
+                    self.state = STATE_TRANSCRIBING
+                    self._transcribe_and_type()
+                    self.state = STATE_IDLE
+            except Exception as exc:               # belt-and-suspenders: one bad
+                log(f"state-machine error: {exc}")      # F9 cycle must not crash us
 
         self._stop_recording()
         log("shutting down")

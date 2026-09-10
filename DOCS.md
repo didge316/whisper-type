@@ -197,9 +197,9 @@ WHISPER_DRY=1 ./scripts/run.sh           # print text instead of typing (headles
 ```bash
 sudo usermod -aG input matt              # done
 sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null <<'EOF'
-SUBSYSTEM=="uinput", GROUP="input", MODE="0660"
+KERNEL=="uinput", GROUP="input", MODE="0660"
 EOF
-sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=uinput
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=misc
 ```
 
 > **Effective groups are a snapshot from login.** After `usermod`, the change does
@@ -207,10 +207,17 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=ui
 > Verify with `id` (your effective groups), **not** `id matt` (which re-reads
 > `/etc/group` and will always show it).
 
-Symptom of a stale snapshot: `/dev/uinput` or `/dev/input/eventN` opens with
-*Permission denied*, and the daemon logs `no keyboard with KEY_F9 found`. On this
-box the service currently shows `failed` for exactly that reason until the next
-login; it is otherwise enabled and correct.
+> **The udev rule must match `KERNEL=="uinput"`, not `SUBSYSTEM=="uinput"`.**
+> `/dev/uinput` is a **`misc`** char device (major 10, minor 223) — its subsystem
+> is `misc`, so a rule keyed on `SUBSYSTEM=="uinput"` never matches and the node
+> stays `0600 root:root` (everyone except root is denied). After any change to the
+> rule, `udevadm control --reload-rules` + a trigger on `subsystem-match=misc`.
+> Symptom of a broken rule: `ls -la /dev/uinput` shows `crw------- root root`.
+
+Symptom of a stale snapshot / broken rule: `/dev/uinput` or `/dev/input/eventN`
+opens with *Permission denied*, and the daemon logs `no keyboard with KEY_F9 found`
+or `UInputError: "/dev/uinput" cannot be opened for writing`. Both are fixed by a
+fresh login (group) and the correct udev rule (perms).
 
 ---
 
@@ -238,7 +245,8 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
 | Service `failed` with `no keyboard with KEY_F9 found` | Same group issue — the current session predates `usermod`. Log out/in. |
 | Recorder still recording after kill | It was SIGKILLed. SIGTERM finalizes cleanly; never `kill -9`. |
 | whisper says "failed to read audio data" | Corrupted WAV header (from a SIGKILL). Re-run capture; never SIGKILL `sdl_rec`. |
-| Nothing types into a native-Wayland app | `/dev/uinput` not writable (input group). This build types via uinput directly, not clipboard/X. |
+| Nothing types into a native-Wayland app | `/dev/uinput` not writable. Check perms (`crw-rw---- root:input`); fix the udev rule (`KERNEL=="uinput"`, subsystem is `misc`). |
+| Service died after one F9 cycle | Now crash-proof: transcribe/type errors are logged and the daemon returns to IDLE instead of exiting. A transient uinput/whisper failure no longer kills the listener. |
 | Holding F9 fires repeatedly | Not applicable — Hyprland/GNOME binds with `repeat: false`; the daemon also fires once per physical press. |
 | F9 itself appears as text | The listener is passive (F9 reaches the app). Usually harmless in terminals; switch trigger if it bothers you. |
 
