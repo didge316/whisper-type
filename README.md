@@ -64,6 +64,12 @@ Install the venv dep:
 
 Copy `conf.env.example` to `conf.env` to set overrides permanently.
 
+## Docs
+
+`README.md` — this quickstart. `PLAN.md` — the build plan. `DOCS.md` — how it works
+under the hood, the full test suite, **measured latency and trade-offs**,
+deployment, and troubleshooting. Read `DOCS.md` before tuning.
+
 ## Autostart on login
 
 ```bash
