@@ -31,27 +31,94 @@ import queue
 import subprocess
 from evdev import InputDevice, ecodes as e
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 # --- configuration -----------------------------------------------------------
-DEVICE_ID = int(os.environ.get("WHISPER_DEVICE_ID", "0"))
+# Defaults are home/repo-relative so a clone works on any machine. Override any
+# of these via env vars or conf.env (see conf.env.example). The paths below are
+# sensible *starting points* — set WHISPER_MODEL / WHISPER_BIN to match where
+# YOU built whisper.cpp and put your model.
 RECORD_BIN = os.environ.get("WHISPER_RECORD_BIN",
-                            os.path.expanduser("~/.local/bin/sdl_rec"))
+                            os.path.normpath(os.path.join(HERE, "..", "bin", "sdl_rec")))
 MODEL = os.environ.get("WHISPER_MODEL",
-                       "/home/matt/whisper.cpp/models/ggml-small.en.bin")
+                       os.path.expanduser("~/whisper.cpp/models/ggml-small.en.bin"))
 WHISPER_BIN = os.environ.get("WHISPER_BIN",
-                             "/home/matt/whisper.cpp/build/bin/whisper-cli")
+                             os.path.expanduser(
+                                 "~/whisper.cpp/build/bin/whisper-cli"))
 RAW = os.environ.get("WHISPER_RAW", "/tmp/whisper-rec.wav")
 DRY = os.environ.get("WHISPER_DRY", "")
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+
+def _score_device_name(name):
+    """Heuristic score: higher = more likely to be the user's mic. SDL device
+    order is not stable across machines, so we pick the best-named capture
+    device instead of blindly using index 0."""
+    n = name.lower()
+    s = 0
+    if "microphone" in n or "mic" in n:
+        s += 10
+    if "headset" in n or "headphone" in n:
+        s += 8
+    if "h390" in n or "logitech" in n:
+        s += 5
+    if "input" in n or "capture" in n:
+        s += 3
+    return s
+
+
+def detect_device_id():
+    """Pick the best SDL capture device by name; fall back to 0 if we can't
+    enumerate (recorder missing, no devices, etc.)."""
+    try:
+        out = subprocess.run([RECORD_BIN, "--list"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return 0
+    best_idx, best_score = 0, 0
+    for line in out.splitlines():
+        line = line.strip()
+        if ":" not in line:
+            continue
+        idx_s, _, name = line.partition(":")
+        try:
+            idx = int(idx_s.strip())
+        except ValueError:
+            continue
+        score = _score_device_name(name)
+        if score > best_score:
+            best_score, best_idx = score, idx
+    return best_idx
+
+
+def resolve_device_id():
+    """Explicit WHISPER_DEVICE_ID wins; otherwise auto-detect the mic."""
+    raw = os.environ.get("WHISPER_DEVICE_ID", "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            log(f"invalid WHISPER_DEVICE_ID={raw!r}, auto-detecting")
+    return detect_device_id()
+
 sys.path.insert(0, HERE)
 from f9_trigger import find_keyboards  # noqa: E402
 from uinput_type import type_text  # noqa: E402
 
-STATE_IDLE, STATE_RECORDING, STATE_TRANSCRIBING = 0, 1, 2
-
 
 def log(msg):
     print(f"[whisper-type] {msg}", file=sys.stderr, flush=True)
+
+
+def check_recorder():
+    """Fail early with a helpful message if the recorder isn't built yet."""
+    if not (os.path.exists(RECORD_BIN) and os.access(RECORD_BIN, os.X_OK)):
+        sys.exit(
+            f"recorder not found at {RECORD_BIN}\n"
+            "  build it first:  recorder/build.sh   (needs libSDL2-dev)"
+        )
+
+
+STATE_IDLE, STATE_RECORDING, STATE_TRANSCRIBING = 0, 1, 2
 
 
 def collapse_ws(text):
@@ -73,6 +140,13 @@ class WhisperType:
             sys.exit(1)
         self.path, self.dev = kbs[0]
         log(f"using keyboard {self.path} ({self.dev.name})")
+
+        # pick the SDL capture device (explicit config, else auto-detect the mic)
+        self.device_id = resolve_device_id()
+        if os.environ.get("WHISPER_DEVICE_ID", "").strip():
+            log(f"using SDL capture device {self.device_id} (from config)")
+        else:
+            log(f"auto-detected SDL capture device {self.device_id}")
 
     # -- F9 listener (runs in a background thread) ---------------------------
     def _listen(self):
@@ -100,7 +174,7 @@ class WhisperType:
                 pass
         log("recording ... (press F9 to stop)")
         self.recorder = subprocess.Popen(
-            [RECORD_BIN, str(DEVICE_ID), "0", RAW],
+            [RECORD_BIN, str(self.device_id), "0", RAW],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self.state = STATE_RECORDING
@@ -202,6 +276,7 @@ def main():
         for path, dev in find_keyboards():
             print(f"{path}  name={dev.name!r}")
         return
+    check_recorder()  # apply to both --once and the daemon path
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
         # one full cycle for automated testing: record 2s, transcribe, print
         import subprocess as _sp
@@ -211,7 +286,8 @@ def main():
                 os.unlink(p)
             except FileNotFoundError:
                 pass
-        _sp.run([RECORD_BIN, str(DEVICE_ID), "2", RAW],
+        dev_id = resolve_device_id()
+        _sp.run([RECORD_BIN, str(dev_id), "2", RAW],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _sp.run([WHISPER_BIN, "-m", MODEL, "-f", RAW, "-oj", "-nt", "-np", "-of", RAW],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -228,8 +228,8 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
 
 | Var | Default | Meaning |
 |---|---|---|
-| `WHISPER_DEVICE_ID` | `0` | SDL capture device (0 = H390 mic) |
-| `WHISPER_RECORD_BIN` | `~/.local/bin/sdl_rec` | recorder path |
+| `WHISPER_DEVICE_ID` | auto-detect | SDL capture device; left unset → picks the best-named mic (see `bin/sdl_rec --list`). |
+| `WHISPER_RECORD_BIN` | repo `bin/sdl_rec` | recorder path (built from `recorder/sdl_rec.c`) |
 | `WHISPER_MODEL` | `.../ggml-small.en.bin` | whisper model |
 | `WHISPER_BIN` | `.../whisper-cli` | whisper binary |
 | `WHISPER_RAW` | `/tmp/whisper-rec.wav` | raw wav path (whisper writes `+ .json`) |

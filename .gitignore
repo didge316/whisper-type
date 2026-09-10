@@ -1,5 +1,14 @@
+# Python
 __pycache__/
 *.pyc
+
+# Local config (may contain per-machine paths) — ship conf.env.example instead
 conf.env
+
+# Build artifact: recorder is built from source (recorder/build.sh). This keeps
+# the repo platform-agnostic; users build for their own arch.
+bin/sdl_rec
+
+# Test captures / transcription output
 *.wav
 *.json

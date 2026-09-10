@@ -1,7 +1,7 @@
 /* Lightweight SDL2 capture -> 16kHz mono 16-bit WAV.
    Runs until killed (SIGTERM/SIGINT) then writes a clean WAV.
    SDL 2.28+ API (SDL_OpenAudioDevice iscapture=1, SDL_DequeueAudio, CVT resample).
-   Usage: sdl_rec <device-id> <seconds=0=infinite> <out.wav> */
+   Usage: sdl_rec [--list] <device-id> <seconds=0=infinite> <out.wav> */
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,12 +14,36 @@ static void on_sig(int s){ (void)s; stop = 1; }
 
 static void put32(unsigned char*h, unsigned long v){ h[0]=v;h[1]=v>>8;h[2]=v>>16;h[3]=v>>24; }
 
+/* List SDL capture devices as "<index>: <name>" so callers can pick one.
+   Used by the daemon's auto-detect (SDL device order varies between machines).
+   Probes indices with SDL_GetAudioDeviceName (returns NULL past the end) because
+   this system's SDL header omits SDL_GetAudioDeviceCount. */
+static int list_devices(void){
+    int found = 0;
+    for (int i = 0; i < 64; i++){
+        const char* name = SDL_GetAudioDeviceName(i, 1); /* 1 = capture */
+        if (!name) break;   /* out of range */
+        printf("%d: %s\n", i, name);
+        found++;
+    }
+    if (!found) printf("(no capture devices found)\n");
+    return 0;
+}
+
 int main(int argc, char** argv){
     int dev_id = argc > 1 ? atoi(argv[1]) : 0;
     int secs   = argc > 2 ? atoi(argv[2]) : 0;
     const char* out = argc > 3 ? argv[3] : "/tmp/sdl_rec.wav";
 
     signal(SIGTERM, on_sig); signal(SIGINT, on_sig);
+
+    /* device listing mode: print capture devices and exit */
+    if (argc > 1 && strcmp(argv[1], "--list") == 0){
+        if (SDL_Init(SDL_INIT_AUDIO) != 0){ fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 2; }
+        int rc = list_devices();
+        SDL_Quit();
+        return rc;
+    }
 
     if(SDL_Init(SDL_INIT_AUDIO) != 0){ fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 2; }
 

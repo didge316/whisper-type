@@ -12,8 +12,11 @@ import sys
 import json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WHISPER_BIN = os.environ.get("WHISPER_BIN", "/home/matt/whisper.cpp/build/bin/whisper-cli")
-MODEL = os.environ.get("WHISPER_MODEL", "/home/matt/whisper.cpp/models/ggml-small.en.bin")
+# Override via env to match where YOU built whisper.cpp + your model.
+WHISPER_BIN = os.environ.get("WHISPER_BIN",
+                             os.path.expanduser("~/whisper.cpp/build/bin/whisper-cli"))
+MODEL = os.environ.get("WHISPER_MODEL",
+                       os.path.expanduser("~/whisper.cpp/models/ggml-small.en.bin"))
 CLIP = "/tmp/whisper-test-fox.wav"
 SCRIPT = "the quick brown fox jumps over the lazy dog"
 
