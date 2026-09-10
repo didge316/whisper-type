@@ -12,13 +12,18 @@ Usage:
 
 Prints "F9_PRESSED" to stdout on each F9 press. Exit on SIGINT/SIGTERM.
 """
-import sys, time, signal
+import os, sys, time, signal
 from evdev import InputDevice, ecodes as e
 
-KEY_F9 = e.KEY_F9
+# Trigger key, configurable via WHISPER_TRIGGER_KEY (default KEY_F9).
+_TRIGGER_KEY = os.environ.get("WHISPER_TRIGGER_KEY", "KEY_F9").strip()
+if _TRIGGER_KEY.startswith("e."):
+    _TRIGGER_KEY = _TRIGGER_KEY[2:]
+KEY_TRIGGER = getattr(e, _TRIGGER_KEY, e.KEY_F9)
+KEY_TRIGGER_NAME = _TRIGGER_KEY
 
 def find_keyboards():
-    """Return list of (path, InputDevice) for devices that emit KEY_F9."""
+    """Return list of (path, InputDevice) for devices that emit the trigger key."""
     import glob
     out = []
     for path in sorted(glob.glob('/dev/input/event*')):
@@ -27,16 +32,16 @@ def find_keyboards():
         except Exception:
             continue
         caps = dev.capabilities()
-        has_f9 = any(KEY_F9 in codes for codes in caps.values())
+        has_trigger = any(KEY_TRIGGER in codes for codes in caps.values())
         # Gaming mice expose a full HID keyboard interface (F-keys, space, 163 keys),
         # so capabilities can't tell them apart. The real keyboard's name contains
         # "keyboard"; mice say "Mouse". Prefer name, but require F9 too.
-        if has_f9 and 'keyboard' in dev.name.lower():
+        if has_trigger and 'keyboard' in dev.name.lower():
             out.append((path, dev))
     return out
 
 def _run(dev, label):
-    print(f"{label}: {dev} ({dev.name}) listening for F9 ...", file=sys.stderr, flush=True)
+    print(f"{label}: {dev} ({dev.name}) listening for {KEY_TRIGGER_NAME} ...", file=sys.stderr, flush=True)
     def _quit(*a):
         sys.exit(0)
     signal.signal(signal.SIGTERM, _quit)
@@ -46,8 +51,8 @@ def _run(dev, label):
         if event is None:
             time.sleep(0.05)  # evdev opens nonblocking; avoid busy-spin
             continue
-        if event.type == e.EV_KEY and event.code == KEY_F9 and event.value == 1:
-            print("F9_PRESSED"); sys.stdout.flush()
+        if event.type == e.EV_KEY and event.code == KEY_TRIGGER and event.value == 1:
+            print(f"{KEY_TRIGGER_NAME}_PRESSED"); sys.stdout.flush()
 
 def main():
     args = sys.argv[1:]
@@ -63,9 +68,9 @@ def main():
         return
     kbs = find_keyboards()
     if not kbs:
-        print("no keyboard with KEY_F9 found", file=sys.stderr); sys.exit(1)
+        print(f"no keyboard with {KEY_TRIGGER_NAME} found", file=sys.stderr); sys.exit(1)
     path, dev = kbs[0]
-    _run(dev, f"auto-selected {path}")
+    _run(dev, f"auto-selected {path} for {KEY_TRIGGER_NAME}")
 
 if __name__ == "__main__":
     main()

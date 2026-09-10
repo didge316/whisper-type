@@ -21,6 +21,7 @@ Config via environment (see conf.env.example):
     WHISPER_BIN        whisper-cli path
     WHISPER_RAW        raw wav path (whisper writes <RAW>.json)
     WHISPER_DRY        non-empty -> print text instead of typing
+    WHISPER_TRIGGER_KEY  push-to-type key (default KEY_F9, e.g. KEY_F10)
     WHISPER_VOCAB      vocab file: terms folded into the context prompt (this
                        whisper-cli build has no -tv flag, so terms are passed
                        via --prompt instead). Default = vocab.txt in the repo.
@@ -51,6 +52,12 @@ WHISPER_BIN = os.environ.get("WHISPER_BIN",
                                  "~/whisper.cpp/build/bin/whisper-cli"))
 RAW = os.environ.get("WHISPER_RAW", "/tmp/whisper-rec.wav")
 DRY = os.environ.get("WHISPER_DRY", "")
+# Trigger key for push-to-type. evdev key name (e.KEY_<NAME>) or bare name.
+# Default F9. Set WHISPER_TRIGGER_KEY=F10 (or e.KEY_F10) to change.
+_TRIGGER_KEY = os.environ.get("WHISPER_TRIGGER_KEY", "KEY_F9").strip()
+if _TRIGGER_KEY.startswith("e."):
+    _TRIGGER_KEY = _TRIGGER_KEY[2:]
+TRIGGER_KEY = getattr(e, _TRIGGER_KEY, e.KEY_F9)
 VOCAB = os.environ.get("WHISPER_VOCAB", os.path.normpath(os.path.join(HERE, "..", "vocab.txt")))
 # whisper-cli in this repo has no -tv vocabulary flag, so the vocab terms are
 # folded into the context prompt. Allow an explicit prompt override; otherwise
@@ -166,7 +173,7 @@ class WhisperType:
 
     # -- F9 listener (runs in a background thread) ---------------------------
     def _listen(self):
-        log(f"listening for F9 on {self.path} ...")
+        log(f"listening for {os.environ.get('WHISPER_TRIGGER_KEY', 'KEY_F9')} on {self.path} ...")
         try:
             while not self._stop:
                 event = self.dev.read_one()
@@ -174,7 +181,7 @@ class WhisperType:
                     time.sleep(0.05)
                     continue
                 if (event.type == e.EV_KEY
-                        and event.code == e.KEY_F9
+                        and event.code == TRIGGER_KEY
                         and event.value == 1):
                     self.f9q.put(True)
         except Exception as exc:  # noqa: BLE001
