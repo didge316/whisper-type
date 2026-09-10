@@ -21,6 +21,10 @@ Config via environment (see conf.env.example):
     WHISPER_BIN        whisper-cli path
     WHISPER_RAW        raw wav path (whisper writes <RAW>.json)
     WHISPER_DRY        non-empty -> print text instead of typing
+    WHISPER_VOCAB      vocab file: terms folded into the context prompt (this
+                       whisper-cli build has no -tv flag, so terms are passed
+                       via --prompt instead). Default = vocab.txt in the repo.
+    WHISPER_PROMPT     explicit context prompt override (default built from vocab).
 """
 import os
 import sys
@@ -47,6 +51,18 @@ WHISPER_BIN = os.environ.get("WHISPER_BIN",
                                  "~/whisper.cpp/build/bin/whisper-cli"))
 RAW = os.environ.get("WHISPER_RAW", "/tmp/whisper-rec.wav")
 DRY = os.environ.get("WHISPER_DRY", "")
+VOCAB = os.environ.get("WHISPER_VOCAB", os.path.normpath(os.path.join(HERE, "..", "vocab.txt")))
+# whisper-cli in this repo has no -tv vocabulary flag, so the vocab terms are
+# folded into the context prompt. Allow an explicit prompt override; otherwise
+# build one from vocab.txt.
+_USER_PROMPT = os.environ.get("WHISPER_PROMPT", "").strip()
+if _USER_PROMPT:
+    PROMPT = _USER_PROMPT
+elif VOCAB and os.path.isfile(VOCAB) and open(VOCAB).read().strip():
+    _terms = [w.strip() for w in open(VOCAB).read().split() if w.strip()]
+    PROMPT = "context: technical terms are " + " ".join(_terms)
+else:
+    PROMPT = ""
 
 
 def _score_device_name(name):
@@ -197,12 +213,17 @@ class WhisperType:
                 log("no wav produced by recorder; skipping")
                 return
             log("transcribing ...")
-            subprocess.run(
-                [WHISPER_BIN, "-m", MODEL, "-f", RAW,
-                 "-oj", "-nt", "-np", "-of", RAW],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                check=False,
-            )
+            cmd = [WHISPER_BIN, "-m", MODEL, "-f", RAW,
+                   "-oj", "-nt", "-np", "-of", RAW]
+            # Context prompt primes the model to spell technical terms correctly.
+            # This build of whisper-cli uses --prompt (no -pt, no -tv vocabulary
+            # flag), so the vocab file is applied via the prompt instead.
+            if PROMPT:
+                cmd += ["--prompt", PROMPT]
+            subprocess.run(cmd,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=False,
+                           )
             text = ""
             jpath = RAW + ".json"
             if os.path.exists(jpath):

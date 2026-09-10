@@ -197,10 +197,22 @@ WHISPER_DRY=1 ./scripts/run.sh           # print text instead of typing (headles
 ```bash
 sudo usermod -aG input didge316              # done
 sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null <<'EOF'
-KERNEL=="uinput", GROUP="input", MODE="0660"
+SUBSYSTEM=="uinput", GROUP="input", MODE="0660"
+SUBSYSTEM=="misc", KERNEL=="uinput", GROUP="input", MODE="0660"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=misc
 ```
+
+> **The `uinput` kernel module must be loaded, or `/dev/uinput` does not exist / is
+> `root:root 0600` even with a correct udev rule.** On this box the module is not
+> loaded by default at boot — the symptom is `ls -la /dev/uinput` showing
+> `crw------- root root` (or the node missing). Load it and persist it:
+> ```bash
+> sudo modprobe uinput
+> echo uinput | sudo tee /etc/modules-load.d/uinput.conf
+> ```
+> Without the persistence line, a reboot reverts `/dev/uinput` to `0600` and typing
+> silently stops (the daemon logs `UInputError: "/dev/uinput" cannot be opened`).
 
 > **Effective groups are a snapshot from login.** After `usermod`, the change does
 > **not** apply until you **log out and back in** (or `sudo`, which re-reads the DB).
@@ -234,6 +246,8 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
 | `WHISPER_BIN` | `.../whisper-cli` | whisper binary |
 | `WHISPER_RAW` | `/tmp/whisper-rec.wav` | raw wav path (whisper writes `+ .json`) |
 | `WHISPER_DRY` | (empty) | non-empty → print instead of type |
+| `WHISPER_VOCAB` | repo `vocab.txt` | one technical term per line; folded into the context prompt (this whisper-cli build has no `-tv` flag) |
+| `WHISPER_PROMPT` | built from `vocab.txt` | explicit context prompt override; primes the model to spell terms correctly |
 
 ---
 
@@ -245,12 +259,20 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
 | Service `failed` with `no keyboard with KEY_F9 found` | Same group issue — the current session predates `usermod`. Log out/in. |
 | Recorder still recording after kill | It was SIGKILLed. SIGTERM finalizes cleanly; never `kill -9`. |
 | whisper says "failed to read audio data" | Corrupted WAV header (from a SIGKILL). Re-run capture; never SIGKILL `sdl_rec`. |
-| Nothing types into a native-Wayland app | `/dev/uinput` not writable. Check perms (`crw-rw---- root:input`); fix the udev rule (`KERNEL=="uinput"`, subsystem is `misc`). |
+| Nothing types into a native-Wayland app | `/dev/uinput` not writable. Check perms (`crw-rw---- root:input`); fix the udev rule (`SUBSYSTEM=="misc", KERNEL=="uinput"`, subsystem is `misc`), confirm `modprobe uinput` loaded the module, and log in fresh (input group). |
 | Service died after one F9 cycle | Now crash-proof: transcribe/type errors are logged and the daemon returns to IDLE instead of exiting. A transient uinput/whisper failure no longer kills the listener. |
 | Holding F9 fires repeatedly | Not applicable — Hyprland/GNOME binds with `repeat: false`; the daemon also fires once per physical press. |
 | F9 itself appears as text | The listener is passive (F9 reaches the app). Usually harmless in terminals; switch trigger if it bothers you. |
 
 ### Gotchas learned the hard way
+
+- **`uinput` module doesn't auto-load at boot.** `/dev/uinput` starts `0600 root:root`
+  until `modprobe uinput` runs. Persisted via `/etc/modules-load.d/uinput.conf`.
+- **The udev rule must key on `SUBSYSTEM=="misc"`, not `SUBSYSTEM=="uinput"`** — the
+  node's real subsystem is `misc`. A rule keyed on `SUBSYSTEM=="uinput"` never matches.
+- **whisper-cli in this repo has no `-tv`/`-pt` flags.** Domain vocabulary is applied
+  through `--prompt` (built from `vocab.txt`), not a separate vocab file.
+- **Group changes need a fresh login.** Effective groups are a login snapshot.
 
 - **Don't SIGKILL `sdl_rec`.** It skips header finalization → RIFF/data sizes = 0
   (un-decodable). Always SIGTERM; the recorder finalizes its own WAV.

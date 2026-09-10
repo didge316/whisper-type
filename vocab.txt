@@ -1,0 +1,7 @@
+# One technical term per line. These terms are folded into the whisper context
+# prompt (this whisper-cli build has no -tv vocab flag) so the model spells them
+# correctly. Edit this list freely; the daemon builds the prompt from it by
+# default. Override with WHISPER_VOCAB / WHISPER_PROMPT (see conf.env.example).
+herdr
+pane
+brave-browser
