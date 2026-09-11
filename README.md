@@ -133,13 +133,19 @@ The f9/type loopback and daemon tests open `/dev/uinput`, so run as a user in th
 - **Recorder still recording after kill** → it was SIGKILLed; SIGTERM finalizes cleanly.
 - **whisper says "failed to read audio data"** → corrupted WAV header; re-run capture
   (never SIGKILL the recorder).
-- **Recording works but "nothing transcribed" after wake from sleep** → the systemd
-  resume hook (`scripts/99-whisper-resume`) restarts the daemon on suspend/resume to
-  restore the CUDA context. Install it with:
+- **Recording works but "nothing transcribed" after wake from sleep** → two causes,
+  both handled by the systemd resume hook (`scripts/99-whisper-resume`), which
+  (a) resyncs PipeWire so the mic comes back at the right gain, and (b) restarts the
+  daemon to restore the CUDA context. Install it with:
   ```bash
   sudo cp scripts/99-whisper-resume /etc/systemd/system-sleep/99-whisper-resume
   sudo chmod +x /etc/systemd/system-sleep/99-whisper-resume
   ```
+  If blanks persist after wake, check the mic is not suspended:
+  `pactl list sources | grep -A6 "H390"`.
+- **"nothing transcribed" even when not suspended** → the mic is weak; the recorder
+  applies digital capture gain (`WHISPER_RECORD_GAIN`, default 64). Speak closer/louder
+  or hold the trigger ~3–5 s. See `SUSPEND-RESUME-TEST.md`.
 - **Typing nothing into a native-Wayland app** → confirm `/dev/uinput` is writable
   (input group). This build types via uinput directly, not the X/clipboard backends.
 
@@ -156,7 +162,7 @@ The f9/type loopback and daemon tests open `/dev/uinput`, so run as a user in th
 
 `README.md` — this quickstart. `DOCS.md` — how it works under the hood, the full test
 suite, **measured latency and trade-offs**, deployment, and troubleshooting. Read
-`DOCS.md` before tuning. `PLAN.md` — the historical development log.
+`DOCS.md` before tuning. `PLAN.md` — the historical development log. `SUSPEND-RESUME-TEST.md` — the live suspend/resume validation and what to do if blanks return after wake.
 
 ## License
 

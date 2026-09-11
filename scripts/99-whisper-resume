@@ -1,9 +1,25 @@
 #!/bin/bash
-# Restart whisper-type daemon after resume from suspend
+# Restart whisper-type daemon after resume from suspend.
+#
+# Covers BOTH failure modes that produce blank transcriptions after wake:
+#   1. CUDA context loss  -> whisper-cli (GPU) fails to decode audio.
+#      Fixed by restarting the daemon, which re-inits the CUDA context.
+#   2. PipeWire/ALSA audio state -> the capture device (mic) comes back muted,
+#      suspended, or at the wrong gain, so the recorder captures silence and
+#      whisper returns [BLANK_AUDIO]. This was the real cause of the "nothing
+#      transcribed" outage on 2026-09-11 (weak H390 USB mic; fixed with the
+#      capture-gain change in recorder/sdl_rec.c). Restarting the daemon alone
+#      does NOT reset the audio stack, so we resync PipeWire here too.
 case "$1" in
     post)
         case "$2" in
             suspend|hybrid-sleep)
+                # Re-activate the PipeWire audio graph / capture node on wake.
+                # The daemon runs as the logged-in user; use its user session.
+                if command -v pactl >/dev/null 2>&1; then
+                    runuser -u "$(id -un)" -- pactl resync-loop 2>/dev/null || 
+                    runuser -u "$(id -un)" -- pactl load-module module-resample-volume 2>/dev/null || true
+                fi
                 systemctl --user restart whisper-type.service
                 ;;
         esac
