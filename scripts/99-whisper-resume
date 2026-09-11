@@ -1,0 +1,11 @@
+#!/bin/bash
+# Restart whisper-type daemon after resume from suspend
+case "$1" in
+    post)
+        case "$2" in
+            suspend|hybrid-sleep)
+                systemctl --user restart whisper-type.service
+                ;;
+        esac
+        ;;
+esac
