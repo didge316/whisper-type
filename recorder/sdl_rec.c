@@ -14,6 +14,15 @@ static void on_sig(int s){ (void)s; stop = 1; }
 
 static void put32(unsigned char*h, unsigned long v){ h[0]=v;h[1]=v>>8;h[2]=v>>16;h[3]=v>>24; }
 
+/* Digital capture gain. This box's Logitech H390 USB mic comes in ~35-40 dB
+   under what whisper needs: even at max ALSA capture gain (11 dB) and 480%
+   PipeWire volume, recorded speech peaks at only ~200-2000 of 32767, so
+   whisper's VAD treats it as silence and returns [BLANK_AUDIO]. Multiply the
+   decoded PCM before writing so speech reaches a healthy level. Configurable
+   via WHISPER_RECORD_GAIN (default 64 = +36 dB); clamp to int16 to avoid
+   distortion. Set to 1 to disable. */
+static double record_gain = 64.0;
+
 /* List SDL capture devices as "<index>: <name>" so callers can pick one.
    Used by the daemon's auto-detect (SDL device order varies between machines).
    Probes indices with SDL_GetAudioDeviceName (returns NULL past the end) because
@@ -93,6 +102,15 @@ int main(int argc, char** argv){
             cvt.len = (int)n;
             memcpy(cvt.buf, inbuf, n);
             SDL_ConvertAudio(&cvt);
+            /* apply digital gain, clamp to int16 */
+            int count = cvt.len_cvt / (CH*BPS);
+            short* s = (short*)cvt.buf;
+            for (int i = 0; i < count; i++) {
+                long v = (long)(s[i] * record_gain);
+                if (v > 32767) v = 32767;
+                if (v < -32768) v = -32768;
+                s[i] = (short)v;
+            }
             fwrite(cvt.buf, 1, cvt.len_cvt, f);
             samples += cvt.len_cvt / (CH*BPS);
         }

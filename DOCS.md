@@ -259,6 +259,8 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
 | Service `failed` with `no keyboard with KEY_F9 found` | Same group issue — the current session predates `usermod`. Log out/in. |
 | Recorder still recording after kill | It was SIGKILLed. SIGTERM finalizes cleanly; never `kill -9`. |
 | whisper says "failed to read audio data" | Corrupted WAV header (from a SIGKILL). Re-run capture; never SIGKILL `sdl_rec`. |
+| Recording works once then every cycle says "nothing transcribed" / `[BLANK_AUDIO]` | The mic input is ~35-40 dB under what whisper needs (weak H390 USB mic); recorded speech peaked at ~200/32767 even at max ALSA+PipeWire gain, so whisper's VAD treated it as silence. Fixed with digital capture gain in `sdl_rec` (`WHISPER_RECORD_GAIN`, default 64 = +36 dB, clamped to int16). See recorder/sdl_rec.c. |
+| Whisper only outputs "you" / "helicopter" / "gunfire" (hallucinations) | The model is decoding room tone, not speech — same weak-mic issue, or a too-short hold. Speak clearly and hold the trigger ~3-5 s. |
 | Nothing types into a native-Wayland app | `/dev/uinput` not writable. Check perms (`crw-rw---- root:input`); fix the udev rule (`SUBSYSTEM=="misc", KERNEL=="uinput"`, subsystem is `misc`), confirm `modprobe uinput` loaded the module, and log in fresh (input group). |
 | Service died after one F9 cycle | Now crash-proof: transcribe/type errors are logged and the daemon returns to IDLE instead of exiting. A transient uinput/whisper failure no longer kills the listener. |
 | Holding F9 fires repeatedly | Not applicable — Hyprland/GNOME binds with `repeat: false`; the daemon also fires once per physical press. |
