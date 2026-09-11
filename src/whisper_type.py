@@ -50,6 +50,14 @@ MODEL = os.environ.get("WHISPER_MODEL",
 WHISPER_BIN = os.environ.get("WHISPER_BIN",
                              os.path.expanduser(
                                  "~/whisper.cpp/build/bin/whisper-cli"))
+# Under sudo, ~ resolves to /root. Fall back to common locations.
+if not os.path.exists(WHISPER_BIN):
+    for cand in ("/home/matt/whisper.cpp/build/bin/whisper-cli",
+                 "/usr/local/bin/whisper-cli",
+                 "/usr/bin/whisper-cli"):
+        if os.path.exists(cand):
+            WHISPER_BIN = cand
+            break
 RAW = os.environ.get("WHISPER_RAW", "/tmp/whisper-rec.wav")
 DRY = os.environ.get("WHISPER_DRY", "")
 # Trigger key for push-to-type. evdev key name (e.KEY_<NAME>) or bare name.

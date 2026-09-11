@@ -4,8 +4,8 @@
 # WHISPER_PYTHON (e.g. systemd passes the interpreter your distro actually has).
 set -euo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
-export PATH="$HOME/.local/share/vox-venv/bin:$PATH"
-PYTHON="${WHISPER_PYTHON:-$HOME/.local/share/vox-venv/bin/python}"
+export PATH="/home/matt/.local/share/vox-venv/bin:$PATH"
+PYTHON="${WHISPER_PYTHON:-/home/matt/.local/share/vox-venv/bin/python}"
 if [ -f conf.env ]; then
     set -a; . ./conf.env; set +a
 fi
