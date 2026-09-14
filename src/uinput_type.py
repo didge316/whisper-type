@@ -49,29 +49,40 @@ def keyname_for(ch):
         return 'KEY_' + ch.upper(), ch.isupper()
     return None, False
 
-def type_text(text, gap=0.015, ui=None):
-    created = ui is None
-    if created:
-        events = {e.EV_KEY: list(range(256))}
-        ui = UInput(events=events, name='virtual-keyboard', bustype=e.BUS_HOST)
-    try:
-        time.sleep(0.3)  # let the compositor attach the new uinput device
-        for ch in text:
-            name, need_shift = keyname_for(ch)
-            if name is None:
-                sys.stderr.write(f"skip char {ch!r}\n")
-                continue
-            code = getattr(e, name)
-            if need_shift:
-                ui.write(e.EV_KEY, SHIFT, 1); ui.syn()
-            ui.write(e.EV_KEY, code, 1); ui.syn()
-            ui.write(e.EV_KEY, code, 0); ui.syn()
-            if need_shift:
-                ui.write(e.EV_KEY, SHIFT, 0); ui.syn()
-            time.sleep(gap)
-    finally:
-        if created:
-            ui.close()
+# Persistent virtual-keyboard handle so the compositor attaches ONE keyboard
+# device for the daemon's whole lifetime. Creating+closing a uinput device per
+# transcription cycle races with the compositor: a stale device from the prior
+# cycle can still be live when the next one appears, and the compositor then
+# interleaves their events -> characters land out of order / duplicated.
+# Reusing one device removes that race entirely.
+_UINPUT = None
+
+def _get_ui():
+    global _UINPUT
+    if _UINPUT is not None:
+        return _UINPUT
+    events = {e.EV_KEY: list(range(256))}
+    ui = UInput(events=events, name='virtual-keyboard', bustype=e.BUS_HOST)
+    time.sleep(0.5)  # let the compositor fully attach the new uinput device
+    _UINPUT = ui
+    return ui
+
+def type_text(text, gap=0.008, ui=None):
+    if ui is None:
+        ui = _get_ui()
+    for ch in text:
+        name, need_shift = keyname_for(ch)
+        if name is None:
+            sys.stderr.write(f"skip char {ch!r}\n")
+            continue
+        code = getattr(e, name)
+        if need_shift:
+            ui.write(e.EV_KEY, SHIFT, 1); ui.syn()
+        ui.write(e.EV_KEY, code, 1); ui.syn()
+        ui.write(e.EV_KEY, code, 0); ui.syn()
+        if need_shift:
+            ui.write(e.EV_KEY, SHIFT, 0); ui.syn()
+        time.sleep(gap)
 
 if __name__ == "__main__":
     msg = " ".join(sys.argv[1:]) or "uinput typer ok"

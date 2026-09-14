@@ -5,3 +5,5 @@
 herdr
 pane
 brave-browser
+claudepi
+lounge

@@ -133,7 +133,7 @@ def resolve_device_id():
 
 sys.path.insert(0, HERE)
 from f9_trigger import find_keyboards  # noqa: E402
-from uinput_type import type_text  # noqa: E402
+from uinput_type import type_text, _get_ui  # noqa: E402
 
 
 def log(msg):
@@ -171,6 +171,11 @@ class WhisperType:
             sys.exit(1)
         self.path, self.dev = kbs[0]
         log(f"using keyboard {self.path} ({self.dev.name})")
+
+        # create the virtual keyboard ONCE at startup and reuse it for every
+        # transcription cycle (removes the per-cycle uinput device-creation race)
+        self._ui = _get_ui()
+        log("virtual keyboard ready")
 
         # pick the SDL capture device (explicit config, else auto-detect the mic)
         self.device_id = resolve_device_id()
@@ -235,9 +240,13 @@ class WhisperType:
             # flag), so the vocab file is applied via the prompt instead.
             if PROMPT:
                 cmd += ["--prompt", PROMPT]
+            # Run on CPU: the GPU is too small to hold whisper's model + KV cache
+            # alongside a running llama-server MTP model. CPU avoids the GPU
+            # cudaMalloc OOM segfault so both run together.
+            env = dict(os.environ, WHISPER_NO_CUDA="1")
             subprocess.run(cmd,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=False,
+                           check=False, env=env,
                            )
             text = ""
             jpath = RAW + ".json"
@@ -260,7 +269,7 @@ class WhisperType:
             else:
                 self.typing = True
                 log(f"typing: {text!r}")
-                type_text(text + " ")          # trailing space words don't stick
+                type_text(text + " ", ui=self._ui)  # trailing space words don't stick
                 self.typing = False
         except Exception as exc:               # never let a typing/transcribe
             log(f"transcribe/type failed: {exc}")  # failure kill the daemon
