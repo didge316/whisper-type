@@ -32,7 +32,8 @@ The `v1` daemon is a Python orchestrator that **wires these three together** and
 ## 2. Non-goals
 
 - Clipboard paste (deliberately avoided — `wlclipboard` isn't installable here).
-- Hold-to-talk, mouse-side-button triggers, VAD/trimming, model upgrades — these are optional follow-ups (see §13).
+- Hold-to-talk is implemented (default trigger mode). Mouse-side-button triggers,
+  VAD/trimming, model upgrades — optional follow-ups (see §13).
 - Cross-distro support; this box is Debian 13 trixie + GNOME 48 on Wayland, RTX 3060.
 
 ---
@@ -347,7 +348,9 @@ systemctl --user enable --now whisper-type.service
 ## 13. Open questions / optional follow-ups
 
 - **Model upgrade:** swap `medium.en` for higher accuracy (~1 GB VRAM — fine on the 3060). Set `WHISPER_MODEL`.
-- **Trigger:** hold-to-talk or a mouse side-button to reduce hand strain.
+- **Trigger:** hold-to-talk is now implemented (default mode; press+hold to record,
+  release to stop+transcribe, via `WHISPER_HOLD_TALK` / `Environment=WHISPER_HOLD_TALK=1`).
+  Push-to-toggle remains available. A mouse side-button trigger is still a follow-up.
 - **Audio cue:** wire up a real start/stop notification (the old `_beep` stub is unused).
 - **Trimming / VAD:** leading-silence trim or a small VAD pass before transcription to cut wasted compute.
 - **Per-app routing:** send transcription to a specific app instead of whichever is focused.

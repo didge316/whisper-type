@@ -66,6 +66,10 @@ _TRIGGER_KEY = os.environ.get("WHISPER_TRIGGER_KEY", "KEY_F9").strip()
 if _TRIGGER_KEY.startswith("e."):
     _TRIGGER_KEY = _TRIGGER_KEY[2:]
 TRIGGER_KEY = getattr(e, _TRIGGER_KEY, e.KEY_F9)
+# Hold-to-talk: record while the key is held, stop+transcribe on release.
+# Default off = push-to-toggle (press once to start, press again to stop).
+# Set WHISPER_HOLD_TALK=1 to hold-and-speak instead.
+HOLD_TALK = bool(os.environ.get("WHISPER_HOLD_TALK", "").strip())
 VOCAB = os.environ.get("WHISPER_VOCAB", os.path.normpath(os.path.join(HERE, "..", "vocab.txt")))
 # whisper-cli in this repo has no -tv vocabulary flag, so the vocab terms are
 # folded into the context prompt. Allow an explicit prompt override; otherwise
@@ -186,17 +190,21 @@ class WhisperType:
 
     # -- F9 listener (runs in a background thread) ---------------------------
     def _listen(self):
-        log(f"listening for {os.environ.get('WHISPER_TRIGGER_KEY', 'KEY_F9')} on {self.path} ...")
+        mode = "hold-to-talk" if HOLD_TALK else "push-to-toggle"
+        log(f"listening for {os.environ.get('WHISPER_TRIGGER_KEY', 'KEY_F9')} ({mode}) on {self.path} ...")
         try:
             while not self._stop:
                 event = self.dev.read_one()
                 if event is None:
                     time.sleep(0.05)
                     continue
+                # Hold-to-talk: press (1) starts recording, release (0) stops it.
+                # Repeat (2) is ignored so a held key fires once. Push-to-toggle
+                # (default) only acts on press edges.
                 if (event.type == e.EV_KEY
                         and event.code == TRIGGER_KEY
-                        and event.value == 1):
-                    self.f9q.put(True)
+                        and (event.value in (0, 1) if HOLD_TALK else event.value == 1)):
+                    self.f9q.put(event.value == 1)   # True=press, False=release
         except Exception as exc:  # noqa: BLE001
             log(f"listener error: {exc}")
 
@@ -294,23 +302,42 @@ class WhisperType:
 
         while not self._stop:
             try:
-                self.f9q.get(timeout=0.2)
+                pressed = self.f9q.get(timeout=0.2)
             except queue.Empty:
                 continue
 
             if self.typing:
-                continue                      # ignore F9 while typing
+                continue                      # ignore keys while typing
 
             try:
-                if self.state == STATE_IDLE:
-                    self._start_recording()
-                elif self.state == STATE_RECORDING:
-                    self._stop_recording()
-                    self.state = STATE_TRANSCRIBING
-                    self._transcribe_and_type()
-                    self.state = STATE_IDLE
+                if HOLD_TALK:
+                    # Hold-to-talk: press starts, release stops+transcribes.
+                    # Drain any queued repeats so a single hold is one cycle.
+                    while True:
+                        try:
+                            self.f9q.get_nowait()
+                        except queue.Empty:
+                            break
+                    if pressed:
+                        if self.state != STATE_RECORDING:
+                            self._start_recording()
+                    else:
+                        if self.state == STATE_RECORDING:
+                            self._stop_recording()
+                            self.state = STATE_TRANSCRIBING
+                            self._transcribe_and_type()
+                            self.state = STATE_IDLE
+                else:
+                    # Push-to-toggle: each press flips the state.
+                    if self.state == STATE_IDLE:
+                        self._start_recording()
+                    elif self.state == STATE_RECORDING:
+                        self._stop_recording()
+                        self.state = STATE_TRANSCRIBING
+                        self._transcribe_and_type()
+                        self.state = STATE_IDLE
             except Exception as exc:               # belt-and-suspenders: one bad
-                log(f"state-machine error: {exc}")      # F9 cycle must not crash us
+                log(f"state-machine error: {exc}")      # key cycle must not crash us
 
         self._stop_recording()
         log("shutting down")

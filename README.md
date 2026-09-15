@@ -148,13 +148,22 @@ The f9/type loopback and daemon tests open `/dev/uinput`, so run as a user in th
   or hold the trigger ~3–5 s.
 - **Typing nothing into a native-Wayland app** → confirm `/dev/uinput` is writable
   (input group). This build types via uinput directly, not the X/clipboard backends.
+- **Mic "stuck on orange"** → the orange light is a separate OS voice app, not this
+  recorder. Check the journal (`journalctl --user -u whisper-type.service -n 40`).
+- **Recording won't stay on / cycles instantly** → switch to hold-to-talk (default)
+  or reset the audio stack: `systemctl --user restart pipewire pipewire-pulse
+  wireplumber` then `systemctl --user restart whisper-type.service`.
+- **Hold-to-talk not active** → it's set via `Environment=WHISPER_HOLD_TALK=1` in
+  `systemd/whisper-type.service`; after editing, run
+  `systemctl --user daemon-reload && systemctl --user restart whisper-type.service`.
 
 ## Known limitations
 
 - F9 also reaches the focused app (passive listener) — harmless in terminals.
 - Voice pickup and on-screen typing depend on your real environment (mic source, model).
-- Linux-only; no hold-to-talk, mouse-button trigger, or per-app routing out of the box
-  (optional follow-ups in `DOCS.md`).
+- Linux-only; mouse-button trigger and per-app routing are optional follow-ups
+  (see `DOCS.md`). Hold-to-talk is supported by default (press+hold to record,
+  release to stop); push-to-toggle is available via `WHISPER_HOLD_TALK=`.
 
 ---
 

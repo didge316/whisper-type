@@ -10,6 +10,10 @@ Type=simple
 # with WHISPER_PYTHON if your venv lives elsewhere:
 #   Environment=WHISPER_PYTHON=/path/to/python
 ExecStart=%h/AI/whisper/v1/scripts/run.sh
+# Hold-to-talk: record while the key is held, stop+transcribe on release.
+# Comment out (or set to empty) for push-to-toggle (press to start, press to stop).
+Environment=WHISPER_HOLD_TALK=1
+
 # Always: the daemon exits 0 on SIGTERM/SIGINT, so on-failure would leave it
 # dead after any external kill (e.g. a debugging session). systemctl stop is
 # still respected under Restart=always.

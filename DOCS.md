@@ -48,12 +48,20 @@ This is the #thing people ask about, so it's called out explicitly.
 **The model is NOT loaded all the time.** Only the small listener is persistent.
 The 487 MB `small.en` model loads on demand and is freed after each cycle.
 
-### Why toggle (start/stop) instead of hold-to-talk
+### Toggle vs hold-to-talk
 
-- Release the key, reposition, think, then stop cleanly — no hand fatigue.
-- Trade-off: there's a processing delay **after** you press F9 to stop (see §5),
-  because the system must stop → transcribe → type. Hold-to-talk has the same
-  processing cost but tires your hand.
+Both modes are supported. Hold-to-talk is the default (press+hold to record, release
+to stop+transcribe); push-to-toggle (press to start, press to stop) is still available
+via `WHISPER_HOLD_TALK=` (empty) + reload/restart.
+
+- **Hold-to-talk** is now default: less finger strain on long sentences, and it
+  sidesteps the double-press stall (§ Troubleshooting A) because there is no toggling.
+  Downside: you must keep holding the key for the whole sentence.
+- **Push-to-toggle**: release the key, reposition, think, then stop cleanly — no hand
+  fatigue. Trade-off: a processing delay **after** you release (see §5), because the
+  system must stop → transcribe → type.
+
+---
 
 ---
 
@@ -277,10 +285,67 @@ Copy `conf.env.example` → `conf.env` to set overrides permanently (sourced by
   through `--prompt` (built from `vocab.txt`), not a separate vocab file.
 - **Group changes need a fresh login.** Effective groups are a login snapshot.
 
+## Troubleshooting: "mic stuck on orange"
+
+**The orange light is almost never the whisper-type recorder.** It belongs to a
+separate OS voice app (the Google / voice-assistant hotkey). Those are two programs
+with two trigger keys — whisper-type uses `KEY_COMPOSE` (see `conf.env`), the voice
+app uses its own key. "The mic is stuck on orange" is a misdiagnosis: the orange is
+the voice app, and it flickers on/off regardless of whisper-type. Diagnose the
+recorder, not the light.
+
+**If the recorder isn't toggling correctly, it is usually NOT a mic/hardware problem.**
+The mic, capture gain, transcribe and type paths all work; check the journal:
+
+```bash
+journalctl --user -u whisper-type.service -n 40 --no-pager
+```
+
+A healthy cycle prints `recording ...` → `transcribing ...` → `typing: "..."`.
+
+**Symptom A — recording never stays on (record→transcribe→record on one press).**
+In push-to-toggle mode one physical press queues two evdev events, but the main loop
+pulled one event per cycle, so the state machine flipped twice (IDLE→RECORDING→
+TRANSCRIBING→IDLE) and recorded ~0 seconds. Evidence in the journal:
+
+```
+recording ... (press F9 to stop)
+no wav produced by recorder; skipping      <- 0-second record
+recording ... (press F9 to stop)
+```
+**Fix (implemented):** use hold-to-talk (default mode now). Press = record, release =
+stop+transcribe. The listener emits both press (value 1) and release (value 0) edges
+and ignores auto-repeat (value 2); the main loop reacts to each edge and drains the
+queue so a single hold is one clean cycle. No toggling, so a press can't flip the
+state twice. See `WHISPER_HOLD_TALK` below. (The push-to-toggle drain-the-queue fix
+also exists but hold-to-talk sidesteps the class of bug entirely.)
+
+**Symptom B — completely unresponsive / stuck recording.**
+The audio stack was in a bad state, often with a zombie `sdl_rec` left by a previous
+long recording, and PipeWire shifted its device IDs on restart so the daemon's cached
+auto-detect no longer matched. Reset and relaunch:
+
+```bash
+systemctl --user restart pipewire pipewire-pulse wireplumber
+systemctl --user restart whisper-type.service
+```
+
+Verify capture at full scale (should peak near 32767):
+
+```bash
+timeout 3 bin/sdl_rec 0 1 /tmp/t.wav && python3 -c "import wave,struct;..."
+```
+
 - **Don't SIGKILL `sdl_rec`.** It skips header finalization → RIFF/data sizes = 0
   (un-decodable). Always SIGTERM; the recorder finalizes its own WAV.
 - **`wAV` header offsets** are the standard layout: audio_format @20, block_align
   @32, bits_per_sample @34. (A test once read these at +4 offsets.)
+- **Trigger modes:** push-to-toggle (press to start, press to stop) vs hold-to-talk
+  (press+hold to record, release to stop+transcribe). Hold-to-talk is the default
+  now and is enabled via `Environment=WHISPER_HOLD_TALK=1` in
+  `systemd/whisper-type.service` (reload + restart after any change). Hold-to-talk
+  also avoids the double-press stall (§ above). The trigger key is `KEY_COMPOSE` in
+  `conf.env` (`WHISPER_TRIGGER_KEY`).
 - **Gaming mice false-trigger F9** — they expose a full HID keyboard interface.
   `f9_trigger` selects the real keyboard by name containing "keyboard", not by
   capability counts.

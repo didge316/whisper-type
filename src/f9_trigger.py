@@ -51,8 +51,11 @@ def _run(dev, label):
         if event is None:
             time.sleep(0.05)  # evdev opens nonblocking; avoid busy-spin
             continue
-        if event.type == e.EV_KEY and event.code == KEY_TRIGGER and event.value == 1:
-            print(f"{KEY_TRIGGER_NAME}_PRESSED"); sys.stdout.flush()
+        # Hold-to-talk: emit both edges so the daemon records while held and
+        # stops on release. value==1 = press (start), value==0 = release (stop).
+        # value==2 = auto-repeat: ignore, so a held key fires only once.
+        if event.type == e.EV_KEY and event.code == KEY_TRIGGER and event.value in (0, 1):
+            print(f"{KEY_TRIGGER_NAME}_{'PRESSED' if event.value == 1 else 'RELEASED'}"); sys.stdout.flush()
 
 def main():
     args = sys.argv[1:]
